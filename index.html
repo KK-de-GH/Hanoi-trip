@@ -156,6 +156,24 @@ textarea{min-height:56px;resize:vertical}
 .sctl{display:flex;gap:2px}
 .sctl button{width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:var(--surface);cursor:pointer;font-size:13px;display:grid;place-items:center;color:var(--muted)}
 .sctl button:hover{color:var(--ink);border-color:var(--faint)}
+.wl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:0 0 6px 34px;list-style:none}
+.btn.sm{padding:3px 9px;font-size:12px}
+.results{display:flex;flex-direction:column;gap:22px;padding-block:16px 18px}
+.rsec{display:flex;flex-direction:column;gap:10px}
+.people{display:flex;flex-wrap:wrap;gap:6px}
+.person{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:3px 10px 3px 3px;font-size:12.5px;font-weight:600}
+.rwrap{overflow-x:auto;margin-inline:-18px;padding-inline:18px}
+.rtable{width:100%;min-width:520px;border-collapse:collapse;font-size:12.5px}
+.rtable th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:700;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.rtable td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+.rtable td:first-child{min-width:150px}
+.rtable tr.pk td:first-child{box-shadow:inset 3px 0 0 var(--want)}
+.rp{border:0;background:none;padding:0;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-align:left}
+.rn{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
+.n{font-family:var(--font-data);font-weight:600;font-size:13px}
+.n.w{color:var(--want)} .n.m{color:var(--maybe)} .n.s{color:var(--skip)}
+.faint{color:var(--faint)}
+.app.wide{grid-template-columns:minmax(560px,760px) 1fr}
 .empty{font-size:13px;color:var(--muted);background:var(--hover);border-radius:10px;padding:10px 12px}
 /* map ui */
 .mapui{position:absolute;left:calc(12px + env(safe-area-inset-left,0px));top:12px;display:flex;gap:8px;flex-wrap:wrap;z-index:2;max-width:calc(100% - 70px)}
@@ -224,6 +242,10 @@ textarea{min-height:56px;resize:vertical}
 
     <div id="daysView" class="pad" hidden>
       <div class="days" id="days"></div>
+    </div>
+
+    <div id="resultsView" class="pad" hidden>
+      <div class="results" id="results"></div>
     </div>
 
     <section class="block pad">
@@ -451,7 +473,7 @@ const store={get(k){try{return localStorage.getItem(k)}catch{return null}},set(k
 
 /* ---------- state ---------- */
 const S={tab:"all",sub:"all",open:new Set(),sel:null,picksOnly:false,nearSort:false,activeDay:null,
-  name:store.get("hhl-name")||"",votes:[],sugg:[],days:{3:[],4:[]},here:null,loaded:false};
+  name:store.get("hhl-name")||"",votes:[],sugg:[],days:{3:[],4:[]},join:{},here:null,loaded:false};
 function voteMap(){ const m={}; for(const v of S.votes){ (m[v.place]=m[v.place]||{})[v.name]=v.vote; } return m; }
 let VM={};
 function tally(id){ const t={1:[],0:[],"-1":[]}; for(const [n,v] of Object.entries(VM[id]||{})) if(t[v]) t[v].push(n); return t; }
@@ -459,7 +481,7 @@ const mine=id=>{ const r=VM[id]||{}; const k=Object.keys(r).find(n=>n.toLowerCas
 const isPick=id=>{ const t=tally(id); return t[1].length>0&&t[1].length>t[-1].length; };
 const dayOf=id=>{ for(const d of [1,3,4]){ const list=d===1?DAY1.items:S.days[d]; if(list.includes(id)) return d; } return null; };
 function visible(p){
-  if(S.tab!=="all"&&S.tab!=="days"&&p.cat!==S.tab) return false;
+  if(CATS[S.tab]&&p.cat!==S.tab) return false;
   if(S.sub!=="all"&&p.sub!==S.sub) return false;
   if(S.picksOnly&&!isPick(p.id)) return false;
   return true;
@@ -483,7 +505,8 @@ async function push(body){
   catch{ posting--; toast("Not saved. Check your connection."); pull(); return false; }
 }
 function apply(d){
-  S.votes=(d.votes||[]).filter(v=>BY[v.place]); VM=voteMap();
+  const all=d.votes||[]; S.votes=all.filter(v=>BY[v.place]); VM=voteMap();
+  S.join={}; for(const v of all){ const m=/^d([34]):(.+)$/.exec(String(v.place||"")); if(m&&BY[m[2]]&&v.vote===1) (S.join[m[1]+":"+m[2]]=S.join[m[1]+":"+m[2]]||[]).push(v.name); }
   S.sugg=d.suggestions||[];
   S.days={3:(d.days?.["3"]||[]).filter(id=>BY[id]),4:(d.days?.["4"]||[]).filter(id=>BY[id])};
   S.loaded=true; renderAll();
@@ -525,14 +548,26 @@ function addToDay(id,d){
   setDay(d,list); toast(list.includes(id)?`Added to Day ${d}`:`Removed from Day ${d}`);
 }
 
+async function castJoin(d,id){
+  if(!S.name){ askName(); return; }
+  const k=d+":"+id, list=S.join[k]||[]; const me=list.find(n=>n.toLowerCase()===S.name.toLowerCase());
+  S.join[k]=me?list.filter(n=>n!==me):[...list,S.name]; renderDays();
+  await push({type:"vote",place:`d${d}:${id}`,vote:me?null:1});
+}
+const going=(d,id)=>S.join[d+":"+id]||[];
+function whoLine(d,id){
+  const g=going(d,id), w=tally(id)[1], meIn=g.some(n=>n.toLowerCase()===S.name.toLowerCase());
+  return `<li class="wl"><button type="button" class="btn sm" data-join="${d}:${id}" aria-pressed="${meIn}">${meIn?"✓ I'm in":"I'm in"}</button><span class="addr">${g.length?`<b style="color:var(--ink)">Going:</b> ${esc(g.join(", "))}`:"Nobody's in yet"}${w.length?` · Wanted by ${esc(w.join(", "))}`:""}</span></li>`;
+}
 /* ---------- panel ---------- */
-const TABS=()=>[["all","All",null,PLACES.length],...Object.entries(CATS).map(([k,v])=>[k,v.n,v.c,PLACES.filter(p=>p.cat===k).length]),["days","Day plan",null,null]];
+const TABS=()=>[["all","All",null,PLACES.length],...Object.entries(CATS).map(([k,v])=>[k,v.n,v.c,PLACES.filter(p=>p.cat===k).length]),["days","Day plan",null,null],["results","Results",null,null]];
 function renderTabs(){
   const box=$("#cats"); box.textContent="";
   for(const [k,n,c,cnt] of TABS()){ const b=document.createElement("button"); b.type="button"; b.className="tab"; b.setAttribute("aria-pressed",S.tab===k);
     b.innerHTML=(c?`<span class="dot" style="background:var(${c})"></span>`:"")+esc(n)+(cnt!=null?` <span class="count">${cnt}</span>`:"");
     b.onclick=()=>{ S.tab=k; S.sub="all"; if(k==="days"&&!S.activeDay) S.activeDay=3; renderAll(); if(k==="days") fitDay(S.activeDay); }; box.appendChild(b); }
-  const days=S.tab==="days"; $("#placesView").hidden=days; $("#daysView").hidden=!days;
+  const days=S.tab==="days", res=S.tab==="results"; $("#placesView").hidden=days||res; $("#daysView").hidden=!days; $("#resultsView").hidden=!res;
+  const app=document.querySelector(".app"); if(app.classList.contains("wide")!==res){ app.classList.toggle("wide",res); setTimeout(()=>map&&map.resize(),60); }
   $("#catsum").textContent=S.tab==="all"?"51 places from 19 posts: 31 food and drink, 4 sights, 2 activities, 14 shopping stops. Open an area to see its places, and open a place for details, votes and what's nearby.":CATS[S.tab]?.s||"";
   const subs=$("#subs"); subs.textContent=""; subs.hidden=S.tab!=="food";
   if(S.tab==="food"){ const sc={}; PLACES.filter(p=>p.cat==="food").forEach(p=>sc[p.sub]=(sc[p.sub]||0)+1);
@@ -608,12 +643,13 @@ function routeUrl(items){
   return `https://www.google.com/maps/dir/?api=1&travelmode=walking&origin=${q(ps[0])}&destination=${q(ps[ps.length-1])}${mid?"&waypoints="+mid:""}`;
 }
 function dayCard(d,title,items,opts={}){
-  const {out,tot}=legs(items); const c=`var(${DAY_COLORS[d]})`; const url=routeUrl(items); const on=S.activeDay===d;
+  const {out,tot}=legs(items); const c=`var(${DAY_COLORS[d]})`; const ppl=opts.locked?[]:[...new Set(items.flatMap(id=>going(d,id)))]; const url=routeUrl(items); const on=S.activeDay===d;
   const stops=items.map((id,i)=>{ const p=BY[id];
-    return `${i?`<li class="leg">${out[i-1]?`${out[i-1]} min walk`:"Grab or taxi"}</li>`:""}<li class="stop"><span class="num">${i+1}</span><button type="button" class="sn" data-goto="${id}">${esc(p.n)}<span class="addr"> · ${esc(p.sub)}${p.a?" · "+esc(AREAS[p.a].n):""}</span></button>${opts.locked?"<span></span>":`<span class="sctl"><button type="button" aria-label="Move up" data-mv="${d}:${i}:-1" ${i?"":"disabled"}>↑</button><button type="button" aria-label="Move down" data-mv="${d}:${i}:1" ${i<items.length-1?"":"disabled"}>↓</button><button type="button" aria-label="Remove" data-rm="${d}:${id}">✕</button></span>`}</li>`; }).join("");
+    return `${i?`<li class="leg">${out[i-1]?`${out[i-1]} min walk`:"Grab or taxi"}</li>`:""}<li class="stop"><span class="num">${i+1}</span><button type="button" class="sn" data-goto="${id}">${esc(p.n)}<span class="addr"> · ${esc(p.sub)}${p.a?" · "+esc(AREAS[p.a].n):""}</span></button>${opts.locked?"<span></span>":`<span class="sctl"><button type="button" aria-label="Move up" data-mv="${d}:${i}:-1" ${i?"":"disabled"}>↑</button><button type="button" aria-label="Move down" data-mv="${d}:${i}:1" ${i<items.length-1?"":"disabled"}>↓</button><button type="button" aria-label="Remove" data-rm="${d}:${id}">✕</button></span>`}</li>${opts.locked?"":whoLine(d,id)}`; }).join("");
   return `<section class="day${on?" on":""}" style="--dc:${c}" id="day-${d}">
     <div class="dhead"><span class="dname"><span class="dot" style="background:${c}"></span>${esc(title)}</span><span class="dmeta">${items.length} stop${items.length===1?"":"s"}${tot?` · ~${tot} min walking`:""}</span></div>
     ${opts.note?`<p class="sub">${esc(opts.note)}</p>`:""}
+    ${ppl.length?`<p class="addr"><b style="color:var(--ink)">Going on Day ${d}:</b> ${esc(ppl.join(", "))}</p>`:""}
     ${items.length?`<ol class="stops">${stops}</ol>`:(opts.locked?"":`<p class="empty">Nothing yet. Open a place and tap <b>+ Day ${d}</b>, or use the group's picks below.</p>`)}
     <div class="btns">${items.length?`<button class="btn" type="button" data-showday="${d}" aria-pressed="${on}">${on?"Showing on map":"Show on map"}</button>`:""}${url?`<a class="btn primary" href="${url}" target="_blank" rel="noopener">Walking route in Google Maps</a>`:""}</div>
   </section>`;
@@ -629,8 +665,34 @@ function renderDays(){
      ${picks.length?`<div class="near">${picks.sort((a,b)=>score(b)-score(a)).map(p=>`<div style="display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:4px 0"><span class="dot" style="background:${catColor(p.cat)}"></span><button type="button" class="sn" data-goto="${p.id}" style="border:0;background:none;padding:0;text-align:left;font-weight:600;cursor:pointer">${esc(p.n)} <span class="addr">· ${esc(AREAS[p.a].n)} · ${tally(p.id)[1].length} want</span></button><span class="sctl"><button type="button" data-addday="3" data-id="${p.id}" style="width:auto;padding:0 8px">D3</button><button type="button" data-addday="4" data-id="${p.id}" style="width:auto;padding:0 8px">D4</button></span></div>`).join("")}</div>`:`<p class="empty">Picks appear here once people vote Want.</p>`}
     </section>`;
 }
-function renderAll(){ renderTabs(); renderGroups(); renderDays(); renderSugg(); setSync(); updateMarkers(); drawRoute(); }
+function renderAll(){ renderTabs(); renderGroups(); renderDays(); renderResults(); renderSugg(); setSync(); updateMarkers(); drawRoute(); }
 
+function renderResults(){
+  const box=$("#results"); if(!box) return;
+  const disp={}; const add=n=>{ if(n) disp[n.toLowerCase()]=disp[n.toLowerCase()]||n; };
+  S.votes.forEach(v=>add(v.name)); Object.values(S.join).flat().forEach(add);
+  const people=Object.keys(disp).sort();
+  const voted=k=>S.votes.filter(v=>v.name.toLowerCase()===k).length;
+  const rows=PLACES.filter(p=>{ const t=tally(p.id); return t[1].length||t[0].length||t[-1].length||dayOf(p.id); })
+    .sort((a,b)=>score(b)-score(a)||tally(b.id)[1].length-tally(a.id)[1].length||a.n.localeCompare(b.n));
+  const names=a=>a.length?`<span class="rn">${esc(a.join(", "))}</span>`:"";
+  const cell=(a,cls)=>`<td><span class="n ${cls}">${a.length||"–"}</span>${names(a)}</td>`;
+  const dayCell=p=>{ const d=dayOf(p.id); if(!d) return `<td><span class="faint">–</span></td>`;
+    const g=d===1?[]:going(d,p.id); return `<td><span class="pill dp" style="background:var(${DAY_COLORS[d]})">Day ${d}</span>${g.length?`<span class="rn">Going: ${esc(g.join(", "))}</span>`:(d===1?"":`<span class="rn">Nobody in yet</span>`)}</td>`; };
+  const picks=PLACES.filter(p=>isPick(p.id)).length;
+  box.innerHTML=`
+   <div class="rsec">
+     <h2>Who's voted</h2>
+     ${people.length?`<div class="people">${people.map(k=>`<span class="person"><span class="face" style="background:${hue(k)};margin:0">${esc(initials(disp[k]))}</span>${esc(disp[k])} <span class="mins">${voted(k)}/${PLACES.length}</span></span>`).join("")}</div>`:`<p class="empty">No votes yet. Names appear here as people vote.</p>`}
+   </div>
+   <div class="rsec">
+     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap"><h2>Every voted place</h2><span class="mins">${rows.length} places · ${picks} group pick${picks===1?"":"s"}</span></div>
+     ${rows.length?`<div class="rwrap"><table class="rtable"><thead><tr><th>Place</th><th>Want</th><th>Maybe</th><th>Skip</th><th>Day</th></tr></thead><tbody>
+       ${rows.map(p=>{ const t=tally(p.id); return `<tr${isPick(p.id)?' class="pk"':""}><td><button type="button" class="rp" data-goto="${p.id}"><span class="dot" style="background:${catColor(p.cat)}"></span>${esc(p.n)}</button><span class="rn">${esc(p.a?AREAS[p.a].n:"No pin")}</span></td>${cell(t[1],"w")}${cell(t[0],"m")}${cell(t[-1],"s")}${dayCell(p)}</tr>`; }).join("")}
+     </tbody></table></div>`:`<p class="empty">Nothing voted yet.</p>`}
+     <p class="addr">Green rows are group picks (more Want than Skip). Tap a place to open it. Suggested links are under <a href="#suggest">Add a place</a>.</p>
+   </div>`;
+}
 /* ---------- interactions ---------- */
 function openArea(k,fromMap){
   const was=S.open.has(k); if(fromMap) S.open.add(k); else was?S.open.delete(k):S.open.add(k);
@@ -642,7 +704,7 @@ function openPlace(id,{fromMap=false,fromList=false}={}){
   const p=BY[id], prev=S.sel;
   if(fromList&&prev===id){ S.sel=null; refreshPlace(id); updateMarkers(); return; }
   S.sel=id;
-  if(S.tab==="days"||(S.tab!=="all"&&S.tab!==p.cat)){ S.tab="all"; S.sub="all"; }
+  if(!CATS[S.tab]&&S.tab!=="all"||(CATS[S.tab]&&S.tab!==p.cat)){ S.tab="all"; S.sub="all"; }
   const g=p.a||"none";
   if(!S.open.has(g)||S.nearSort===false&&!document.getElementById("pl-"+id)){ S.open.add(g); renderAll(); } else { refreshPlace(prev); refreshPlace(id); }
   if(p.ll&&!p.far) flyToPlace(p); updateMarkers();
@@ -651,6 +713,7 @@ function openPlace(id,{fromMap=false,fromList=false}={}){
 document.addEventListener("click",e=>{
   const t=e.target.closest("button,a"); if(!t) return; const ds=t.dataset;
   if(ds.vote){ if(!S.name){ askName(); return; } castVote(ds.vote,Number(ds.v)); return; }
+  if(ds.join){ const [d,id]=ds.join.split(":"); castJoin(Number(d),id); return; }
   if(ds.toggle){ openPlace(ds.toggle,{fromList:true}); return; }
   if(ds.goto){ openPlace(ds.goto,{}); return; }
   if(ds.show){ flyToPlace(BY[ds.show],17); if(innerWidth<=860) scrollTo({top:0,behavior:"smooth"}); return; }
