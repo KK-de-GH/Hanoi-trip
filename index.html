@@ -1,0 +1,787 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hanoi Hit List</title>
+<meta name="description" content="The group's Hanoi places: vote, plan Day 3 and Day 4, and find what's near you.">
+<meta name="theme-color" content="#f6f5f2">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+/* ============================================================
+   SETUP: paste your Apps Script web-app URL between the quotes.
+   ============================================================ */
+</style>
+<script>
+const CONFIG = {
+  votesUrl: "",   // e.g. "https://script.google.com/macros/s/AKfy.../exec"
+  styles: {
+    detailed: "https://tiles.openfreemap.org/styles/liberty",
+    clean: "https://tiles.openfreemap.org/styles/positron"
+  }
+};
+</script>
+<style>
+:root{
+  --bg:#f6f5f2; --surface:#ffffff; --ink:#18191b; --muted:#6b6e73; --faint:#9a9da3; --line:#e6e4df; --chip:#f0eee9; --hover:#f7f6f3;
+  --shadow:0 1px 2px rgba(20,20,20,.08),0 6px 18px rgba(20,20,20,.08);
+  --food:#e2701f; --sight:#109a73; --activity:#c03c92; --shop:#4560d6;
+  --want:#109a73; --maybe:#c99312; --skip:#9a9da3; --warn-bg:#fdf1dc; --warn-ink:#80500a;
+  --d1:#7a5af5; --d3:#e2483d; --d4:#1f7ae0;
+  --font-ui:"Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root{
+  --bg:#121315; --surface:#1b1c1f; --ink:#ecedef; --muted:#a2a5ab; --faint:#7b7e85; --line:#2c2e32; --chip:#25272b; --hover:#222327;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.35);
+  --food:#f08a3a; --sight:#2fb98f; --activity:#de5fae; --shop:#6f86ec;
+  --want:#2fb98f; --maybe:#e0ad37; --skip:#7b7e85; --warn-bg:#3a2b12; --warn-ink:#f2c777;
+  --d1:#9a82ff; --d3:#f26b5f; --d4:#4c9bf0;
+  color-scheme:dark;
+}}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-ui);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+button,input,textarea{font:inherit;color:inherit}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+[hidden]{display:none!important}
+.app{display:grid;grid-template-columns:minmax(340px,430px) 1fr;height:100%}
+.panel{overflow-y:auto;background:var(--surface);border-right:1px solid var(--line);min-width:0;display:flex;flex-direction:column}
+.panel>*{flex-shrink:0}
+.pad{padding-left:max(18px,env(safe-area-inset-left,0px));padding-right:18px}
+.mapwrap{position:relative;min-width:0}
+#map{position:absolute;inset:0}
+header.pad{padding-block:max(22px,env(safe-area-inset-top,0px)) 12px;display:flex;flex-direction:column;gap:8px}
+h1{font-size:24px;font-weight:800;letter-spacing:-.025em;margin:0;line-height:1.1}
+h2{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin:0}
+p{margin:0}
+.sub{color:var(--muted);font-size:13.5px;max-width:58ch}
+.who{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.who b{color:var(--ink)}
+.who form{display:flex;gap:6px;flex:1;min-width:220px}
+.linkbtn{border:0;background:none;padding:0;color:var(--muted);text-decoration:underline;cursor:pointer;font-size:13px}
+.sync{font-size:12px;color:var(--faint)}
+.tabs{position:sticky;top:0;z-index:3;background:var(--surface);border-bottom:1px solid var(--line);padding-block:10px;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{border:0;background:transparent;border-radius:999px;padding:6px 11px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:13px;color:var(--muted);white-space:nowrap}
+.tab:hover{background:var(--hover);color:var(--ink)}
+.tab[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block}
+.count{font-family:var(--font-data);font-size:10.5px;opacity:.7}
+.intro{padding-block:14px 6px;display:flex;flex-direction:column;gap:10px}
+.subs{display:flex;flex-wrap:wrap;gap:6px}
+.subs .tab{border:1px solid var(--line);padding:4px 10px;font-size:12.5px}
+.subs .tab[aria-pressed="true"]{border-color:var(--ink)}
+.opts{display:flex;gap:16px;flex-wrap:wrap}
+label.toggle{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);cursor:pointer}
+.toggle input{accent-color:var(--want);width:16px;height:16px;margin:0}
+.groups{display:flex;flex-direction:column;padding-block:6px 10px}
+.group{border-bottom:1px solid var(--line)}
+.ghead{width:100%;border:0;background:transparent;display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:10px;padding:14px 0;cursor:pointer;text-align:left}
+.gn{font-weight:700;font-size:15px;letter-spacing:-.01em;display:block}
+.gt{font-size:12px;color:var(--muted);display:block}
+.gc{font-family:var(--font-data);font-size:11.5px;color:var(--muted);background:var(--chip);border-radius:999px;padding:2px 8px}
+.chev{width:16px;height:16px;transition:transform .2s;color:var(--muted)}
+.group.open .chev{transform:rotate(180deg)}
+.gbody{display:flex;flex-direction:column;gap:2px;padding-bottom:14px}
+.gsum{font-size:13px;color:var(--muted);padding:0 0 10px;max-width:60ch}
+.place{border-radius:12px;scroll-margin-top:60px}
+.place.open{background:var(--hover);box-shadow:inset 0 0 0 1px var(--line)}
+.prow{width:100%;border:0;background:transparent;display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center;padding:9px 8px;border-radius:12px;cursor:pointer;text-align:left}
+.prow:hover{background:var(--hover)}
+.ico{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;flex:none;color:#fff}
+.ico svg{width:14px;height:14px}
+.pn{font-weight:600;font-size:14px;line-height:1.3;display:block}
+.pm{font-size:12px;color:var(--muted);display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.pill{font-size:10.5px;font-weight:600;padding:0 6px;border-radius:999px;background:var(--warn-bg);color:var(--warn-ink);line-height:17px}
+.pill.n{background:var(--chip);color:var(--muted)}
+.pill.dp{color:#fff}
+.side{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.score{font-family:var(--font-data);font-size:11px;color:var(--want);white-space:nowrap}
+.dist{font-family:var(--font-data);font-size:11px;color:var(--muted);white-space:nowrap}
+.pbody{padding:2px 12px 14px 46px;display:flex;flex-direction:column;gap:12px}
+.addr{font-size:12.5px;color:var(--muted)}
+.hl{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:5px;font-size:13.5px}
+.hl li::marker{font-family:var(--font-data);font-size:11px;color:var(--muted)}
+.note{font-size:12.5px;padding:9px 11px;border-radius:10px;background:var(--surface);border:1px solid var(--line)}
+.note.warn{background:var(--warn-bg);color:var(--warn-ink);border-color:transparent}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:9px;padding:7px 12px;font-weight:600;font-size:12.5px;cursor:pointer;text-decoration:none;color:var(--ink);display:inline-flex;align-items:center;gap:6px}
+.btn:hover{border-color:var(--faint)}
+.btn.primary{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.btn[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.votes{display:inline-flex;background:var(--surface);border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.votes button{border:0;background:transparent;padding:5px 11px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--muted)}
+.votes button+button{border-left:1px solid var(--line)}
+.votes button[aria-pressed="true"][data-v="1"]{background:var(--want);color:#fff}
+.votes button[aria-pressed="true"][data-v="0"]{background:var(--maybe);color:#fff}
+.votes button[aria-pressed="true"][data-v="-1"]{background:var(--skip);color:#fff}
+.vrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tally{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+.faces{display:inline-flex}
+.face{width:20px;height:20px;border-radius:50%;border:2px solid var(--hover);margin-left:-6px;display:grid;place-items:center;font-size:9px;font-weight:700;color:#fff}
+.face:first-child{margin-left:0}
+.near{display:flex;flex-direction:column}
+.near button{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;border:0;background:transparent;padding:5px 6px;margin-inline:-6px;border-radius:8px;cursor:pointer;text-align:left;font-size:13px}
+.near button:hover{background:var(--surface)}
+.mins{font-family:var(--font-data);font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.block{padding-block:18px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+form.stack{display:flex;flex-direction:column;gap:8px}
+label.f{font-size:12px;font-weight:600;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+input[type=url],input[type=text],textarea{border:1px solid var(--line);background:var(--bg);border-radius:9px;padding:8px 10px;font-size:14px;width:100%;min-width:0}
+textarea{min-height:56px;resize:vertical}
+.sugg{font-size:13px;display:flex;flex-direction:column;gap:6px}
+.sugg div{border-bottom:1px solid var(--line);padding-bottom:6px;overflow-wrap:anywhere}
+.foot{font-size:11.5px;color:var(--faint);display:flex;flex-direction:column;gap:6px;padding-block:16px 32px;border-top:1px solid var(--line)}
+/* days */
+.days{display:flex;flex-direction:column;gap:14px;padding-block:14px 18px}
+.day{border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.day.on{border-color:var(--dc);box-shadow:inset 0 0 0 1px var(--dc)}
+.dhead{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.dname{font-weight:800;font-size:16px;display:flex;align-items:center;gap:8px}
+.dname .dot{width:10px;height:10px}
+.dmeta{font-size:12px;color:var(--muted);font-family:var(--font-data)}
+.stops{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.stop{display:grid;grid-template-columns:24px 1fr auto;gap:10px;align-items:center;padding:6px 0}
+.leg{font-size:11.5px;color:var(--muted);font-family:var(--font-data);padding:0 0 0 34px;display:flex;align-items:center;gap:6px}
+.leg::before{content:"";width:1.5px;height:14px;background:var(--line);margin-left:-23px;margin-right:12px}
+.num{width:24px;height:24px;border-radius:50%;background:var(--dc);color:#fff;font-size:12px;font-weight:700;display:grid;place-items:center}
+.stop .sn{font-weight:600;font-size:13.5px;cursor:pointer;background:none;border:0;padding:0;text-align:left}
+.sctl{display:flex;gap:2px}
+.sctl button{width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:var(--surface);cursor:pointer;font-size:13px;display:grid;place-items:center;color:var(--muted)}
+.sctl button:hover{color:var(--ink);border-color:var(--faint)}
+.empty{font-size:13px;color:var(--muted);background:var(--hover);border-radius:10px;padding:10px 12px}
+/* map ui */
+.mapui{position:absolute;left:calc(12px + env(safe-area-inset-left,0px));top:12px;display:flex;gap:8px;flex-wrap:wrap;z-index:2;max-width:calc(100% - 70px)}
+.seg{display:inline-flex;background:var(--surface);border-radius:10px;box-shadow:var(--shadow);overflow:hidden}
+.seg button{border:0;background:transparent;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+.legend{background:var(--surface);border-radius:10px;box-shadow:var(--shadow);padding:7px 11px;font-size:11.5px;font-weight:600;display:flex;gap:10px;flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.toast{position:absolute;left:50%;bottom:calc(40px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:8px 14px;border-radius:10px;font-size:13px;font-weight:600;pointer-events:none;opacity:0;transition:opacity .2s;white-space:nowrap;z-index:5}
+.toast.on{opacity:1}
+/* markers */
+.pin{width:30px;height:30px;cursor:pointer}
+.pin .b{position:absolute;inset:0;border-radius:50%;border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.28);display:grid;place-items:center;color:#fff;transition:transform .15s}
+.pin .b svg{width:14px;height:14px}
+.pin.pick .b{outline:3px solid var(--want);outline-offset:1px}
+.pin.sel{z-index:5}
+.pin.sel .b{transform:scale(1.3)}
+.pin.dim{opacity:.38}
+.pin .lab{position:absolute;left:34px;top:50%;transform:translateY(-50%);background:#fff;color:#18191b;font-size:11.5px;font-weight:600;padding:2px 7px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.2);pointer-events:none;display:none}
+.pin.showlab .lab,.pin.sel .lab{display:block}
+.pin .dn{position:absolute;right:-6px;top:-6px;min-width:17px;height:17px;border-radius:9px;color:#fff;font-size:10px;font-weight:800;display:none;place-items:center;padding:0 4px;border:2px solid #fff}
+.pin.inday .dn{display:grid}
+.small .pin{width:20px;height:20px}
+.small .pin .b{border-width:2px}
+.small .pin .b svg{display:none}
+.bub{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer}
+.bub .c{min-width:38px;height:38px;border-radius:19px;background:#18191b;color:#fff;font-weight:800;display:grid;place-items:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3);padding:0 8px}
+.bub .t{background:#fff;color:#18191b;font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:9px;box-shadow:0 1px 3px rgba(0,0,0,.2);white-space:nowrap}
+.bub .t.hide{display:none}
+.maplibregl-ctrl-group{border-radius:10px!important;box-shadow:var(--shadow)!important}
+@media (max-width:860px){
+  .app{display:flex;flex-direction:column;height:auto}
+  .mapwrap{order:-1;position:sticky;top:0;height:46svh;z-index:5;border-bottom:1px solid var(--line)}
+  .panel{border-right:0;overflow:visible}
+  .pad{padding-right:max(18px,env(safe-area-inset-right,0px))}
+  .tabs{top:46svh}
+  .place,.day{scroll-margin-top:calc(46svh + 60px)}
+  .legend{display:none}
+  header.pad{padding-top:20px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="panel" id="panel">
+    <header class="pad">
+      <h1>Hanoi Hit List</h1>
+      <p class="sub">Every place from the group chat, pinned and sorted by neighbourhood. Vote, then build Day 3 and Day 4 from the group's picks.</p>
+      <div class="who" id="who"></div>
+      <p class="sync" id="sync"></p>
+    </header>
+    <nav class="tabs pad" id="cats" aria-label="Sections"></nav>
+
+    <div id="placesView">
+      <div class="intro pad">
+        <p class="sub" id="catsum"></p>
+        <div class="subs" id="subs"></div>
+        <div class="opts">
+          <label class="toggle" for="picksOnly"><input type="checkbox" id="picksOnly"> Group picks only</label>
+          <label class="toggle" for="nearSort"><input type="checkbox" id="nearSort"> Closest to me first</label>
+        </div>
+      </div>
+      <div class="groups pad" id="groups"></div>
+    </div>
+
+    <div id="daysView" class="pad" hidden>
+      <div class="days" id="days"></div>
+    </div>
+
+    <section class="block pad">
+      <h2>Add a place</h2>
+      <p class="sub">Paste a link from the group chat. Queued links get read and pinned in the next update.</p>
+      <form id="suggest" class="stack">
+        <label class="f" for="sLink">Link<input id="sLink" type="url" required placeholder="http://xhslink.com/…"></label>
+        <label class="f" for="sName">Place name, if you know it<input id="sName" type="text" maxlength="120"></label>
+        <label class="f" for="sNote">Why it's worth it<textarea id="sNote" maxlength="300"></textarea></label>
+        <button class="btn primary" type="submit" id="sBtn" style="align-self:flex-start">Add to the queue</button>
+      </form>
+      <div class="sugg" id="sugglist"></div>
+    </section>
+    <section class="block pad">
+      <h2>Shortlist</h2>
+      <p class="sub">Copies every place with more Want than Skip votes, grouped by area, with Google Maps links for the chat.</p>
+      <div class="btns"><button class="btn" id="copyBtn" type="button">Copy shortlist</button></div>
+    </section>
+    <footer class="foot pad">
+      <p>Map data © OpenStreetMap contributors, tiles by OpenFreeMap. Pins are placed from each address to within about a block; use Open in Google Maps for exact directions.</p>
+      <p>Walking times are straight-line distance plus 30%, at 80 m a minute.</p>
+    </footer>
+  </aside>
+
+  <main class="mapwrap">
+    <div id="map" role="region" aria-label="Map of Hanoi with the group's places"></div>
+    <div class="mapui">
+      <div class="seg" role="group" aria-label="Map style"><button type="button" data-style="detailed" aria-pressed="true">Detailed</button><button type="button" data-style="clean" aria-pressed="false">Clean</button></div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="toast" id="toast" role="status"></div>
+  </main>
+</div>
+
+<script>
+
+const POSTS = {
+  1:{u:"https://www.instagram.com/reel/DdV4ZMqoxOQ/",t:"Hanoi local streetwear (Instagram)"},
+  2:{u:"http://xhslink.com/m/cZZxbcsJIC",t:"10 restaurants to try in Hanoi"},
+  3:{u:"http://xhslink.com/o/8F4LxMdX9Sw",t:"Highlands Coffee's lotus tea"},
+  4:{u:"http://xhslink.com/o/39DM6wNe0KL",t:"Fresh lotus tea, field to cup"},
+  5:{u:"http://xhslink.com/o/6DBIBaJ1sfE",t:"Why this milk tea shop has a queue"},
+  6:{u:"http://xhslink.com/o/5LbcKUGAs3e",t:"Gumee in Hanoi"},
+  7:{u:"http://xhslink.com/o/aq4m4URFnS",t:"Hanoi lotus tea house"},
+  8:{u:"http://xhslink.com/o/4i0QvZgJecu",t:"Finally tried local milk tea"},
+  9:{u:"https://share.google/6T5zKS2RaGJP2ndPX",t:"Nón Lá Healing Spa (Google)"},
+  10:{u:"http://xhslink.com/o/3uwpMnXd2MR",t:"Emperor-style head wash"},
+  11:{u:"https://www.xiaohongshu.com/discovery/item/6a2e52420000000020038fe3",t:"5 local dessert shops"},
+  12:{u:"http://xhslink.com/m/4YqCq6ZAlVO",t:"Hanoi city walk"},
+  13:{u:"http://xhslink.com/m/4jvCPweB0Jw",t:"Vintage shop roundup"},
+  14:{u:"http://xhslink.com/m/ADZO3adoiXL",t:"Souvenir and design shops"},
+  15:{u:"http://xhslink.com/m/6WxRe6KsxLS",t:"Mantis shrimp noodles for 70k"},
+  16:{u:"http://xhslink.com/m/1r0jRkEMP4X",t:"Incense village"},
+  17:{u:"http://xhslink.com/m/8ay6zACpxnj",t:"Long Biên Bridge viewpoint"},
+  18:{u:"http://xhslink.com/m/70LnmXk7po5",t:"Temple of Literature"},
+  19:{u:"http://xhslink.com/m/AwT8cpIhWW",t:"8 cafés locals go to"}
+};
+
+const CATS = {
+  food:{n:"Food & drink",c:"--food",s:"31 picks, heavy on coffee: 14 cafés and 4 tea shops against 7 proper meals and 6 dessert stops. The best-backed meals are Tầm Vị (Michelin star), Bún chả Hương Liên and Phở 10. Nobody gets through 14 cafés, so this is where to vote hardest."},
+  sight:{n:"Sights",c:"--sight",s:"Only 4. The Temple of Literature is the one real half-day sight. Long Biên Bridge and Train Street are short stops, and the incense village is a half-day trip out of town."},
+  activity:{n:"Activities",c:"--activity",s:"Two head spas. Nón Lá has about 2,000 Google reviews behind it; the H Barbershop post may be paid."},
+  shop:{n:"Shopping",c:"--shop",s:"Vintage, boutiques, candles and souvenirs. Most of it sits on one Old Quarter street (Đào Duy Từ) and one boutique row south of the lake, so it batches easily into an afternoon."}
+};
+
+const AREAS = {
+  oq:{n:"Old Quarter",t:"Half to full day on foot",s:"The densest cluster: egg coffee, bánh mì, phở, desserts, a head spa, the vintage street and candles. Serein Café at the north edge is the sunset stop over Long Biên Bridge."},
+  fq:{n:"French Quarter",t:"Half day, pairs with the Old Quarter",s:"South end of Hoàn Kiếm Lake to the Opera House: Kem Tràng Tiền, Pizza 4P's, Cộng, Greyhaus (open late) and desserts, with Bún chả Hương Liên a 10-minute walk south."},
+  tl:{n:"Temple of Literature",t:"Half day",s:"The temple (allow 3 hours), lunch at Tầm Vị, then lotus tea at Hiên Minh, all within 5 minutes' walk of each other. Train Street is about 15 minutes east on foot."},
+  bd:{n:"Ba Đình & Trúc Bạch",t:"One café morning",s:"A café crawl around Trúc Bạch Lake: Everbloom, Caffeine Rush, Ve and Sphira. Phien and H Barbershop sit further west and need a Grab."},
+  hbt:{n:"Hai Bà Trưng",t:"1–2 hours",s:"The boutique row south of the lake (The Maven, Cara Club, White Ant, Huong), bánh cuốn, plus Toka and Maitri for coffee."},
+  dd:{n:"Đống Đa",t:"Detour",s:"Only Gánh Sữa, about 2 km west of the Temple of Literature. Go only if you're nearby."},
+  cg:{n:"Cầu Giấy",t:"Detour",s:"Only the Bề Bề seafood noodles, about 6 km west. The poster says it's not worth a special trip."},
+  trip:{n:"Day trip",t:"Half day by car",s:"Quảng Phú Cầu incense village, about 40 minutes from the centre. Best light is 9–11am."}
+};
+
+/* sub: display type; a: area; ll: [lat,lng] or null (no pin); ap: pin approximate */
+const PLACES = [
+ // ---- coffee
+ {id:"hcc",n:"Hanoi Coffee Culture",cat:"food",sub:"Coffee",a:"oq",ll:[21.0336,105.8548],ad:"45 P. Nguyễn Hữu Huân, Hoàn Kiếm",p:[2],
+  h:["Egg coffee in an Old Quarter roastery","Two minutes' walk from Café Giảng, so you can try both egg coffees"]},
+ {id:"giang",n:"Café Giảng",cat:"food",sub:"Coffee",a:"oq",ll:[21.0331,105.8549],ad:"39 P. Nguyễn Hữu Huân, Hoàn Kiếm",p:[2],
+  h:["Egg coffee from the family credited with inventing it, open since 1946","The hot egg coffee comes sitting in a bowl of hot water to keep it warm"],
+  w:"The post lists 57 Tràng Tiền. The original shop is on Nguyễn Hữu Huân, which is where this pin sits. Check which one you want before going."},
+ {id:"cong",n:"Cộng Cà Phê",cat:"food",sub:"Coffee",a:"fq",ll:[21.0239,105.8563],ad:"4 P. Lý Thường Kiệt, Hoàn Kiếm",p:[2],
+  h:["Coconut coffee (cà phê cốt dừa) is the order","Retro decor themed on the old socialist era","A chain, so there are other branches if this one is full"]},
+ {id:"runbean",n:"The Running Bean",cat:"food",sub:"Coffee",a:"fq",ll:[21.0204,105.8513],ad:"13 P. Ngô Thì Nhậm, Hai Bà Trưng",p:[2],
+  h:["Speciality coffee shop","The post's photos show milk coffees, coconut coffee and salt coffee"]},
+ {id:"serein",n:"Serein Café & Lounge",cat:"food",sub:"Coffee",a:"oq",ll:[21.0411,105.8521],ap:1,ad:"By Long Biên Bridge, Đồng Xuân area",p:[17],
+  h:["The view of Long Biên Bridge and the Red River at sunset","Take the lift to floor 3 to order, then go up to the floor 5 terrace; drinks are brought to you","A spiral stair leads on to a floor 6 rooftop"],
+  t:"Arrive 30–40 minutes before sunset. Check the train timetable if you want a train crossing in your photos."},
+ {id:"everbloom",n:"Everbloom",cat:"food",sub:"Coffee",a:"bd",ll:[21.0451,105.8447],ad:"30 P. Châu Long, Ba Đình",p:[19],
+  h:["French garden style, packed with plants and flowers","4.8 on Google, per the post"]},
+ {id:"caffrush",n:"Caffeine Rush",cat:"food",sub:"Coffee",a:"bd",ll:[21.0459,105.8455],ap:1,ad:"15 ngõ Châu Long, Ba Đình",p:[19],
+  h:["Dark and minimalist; good for working or studying","4.5 on Google, per the post"]},
+ {id:"ve",n:"Ve",cat:"food",sub:"Coffee",a:"bd",ll:[21.0437,105.8480],ap:1,ad:"2 P. Yên Phụ, Ba Đình",p:[19],
+  h:["Pour-over speciality coffee from a local barista's small shop","Highest rated of the eight-café list: 4.9, per the post"]},
+ {id:"sphira",n:"Sphira",cat:"food",sub:"Coffee",a:"bd",ll:[21.0462,105.8388],ap:1,ad:"5 P. Ngũ Xã, Trúc Bạch, Ba Đình",p:[19],
+  h:["Wabi-sabi industrial design, popular with young locals","4.6 on Google, per the post"]},
+ {id:"phien",n:"Phien",cat:"food",sub:"Coffee",a:"bd",ll:[21.0362,105.8292],ap:1,ad:"19 P. Ngọc Hà, Ba Đình",p:[19],
+  h:["New speciality coffee; few reviews so far, but strong ones","4.7 on Google, per the post"]},
+ {id:"greyhaus",n:"Greyhaus",cat:"food",sub:"Coffee",a:"fq",ll:[21.0222,105.8560],ap:1,ad:"55C P. Phan Chu Trinh, Hoàn Kiếm",p:[19],
+  h:["Café by day, bar at night, open late","4.7 on Google, per the post"]},
+ {id:"maitri",n:"Maitri",cat:"food",sub:"Coffee",a:"hbt",ll:[21.0156,105.8584],ap:1,ad:"3 ngõ Hàng Chuối 2, Hai Bà Trưng",p:[19],
+  h:["Japanese zen-style café in an old alley","4.8 on Google, per the post"]},
+ {id:"toka",n:"Toka",cat:"food",sub:"Coffee",a:"hbt",ll:[21.0148,105.8546],ap:1,ad:"42 P. Phù Đổng Thiên Vương, Hai Bà Trưng",p:[19],
+  h:["Retro neighbourhood café with an old-Hanoi street feel","4.6 on Google, per the post"]},
+ {id:"highlands",n:"Highlands Coffee",cat:"food",sub:"Coffee",a:null,ll:null,ad:"Any branch. The post used 222 Trần Duy Hưng, Cầu Giấy",p:[3],
+  h:["Vietnam's biggest coffee chain, with a branch on most main streets","Order Phin Sữa Đá (iced phin coffee with condensed milk), Trà Thạch Đào (peach tea) or Trà Sen Vàng (golden lotus tea)","The poster's favourite is Trà Sen Vàng: salty milk foam, oolong, crunchy lotus seeds and water chestnut"]},
+ // ---- tea
+ {id:"hienminh",n:"Hiên Minh Tea House",cat:"food",sub:"Tea",a:"tl",ll:[21.0270,105.8370],ad:"13 P. Ngô Tất Tố, Văn Miếu, Đống Đa",p:[4,7],
+  h:["Signature fresh lotus teas: lotus white tea and lotus black tea","Other floral teas: ylang-ylang (hoàng lan), white champaca, pomelo blossom, lemon blossom, osmanthus, jasmine, chrysanthemum. One poster's favourite was the ylang-ylang","Staff open the lotus flower at the table and explain how the tea is scented","Upstairs has floor cushions and murals and is very quiet"],
+  pr:"About 80k VND per person to drink in",
+  t:"Loose tea to take home is pricey: one poster paid 2.7M VND and felt overcharged. The vacuum-packed lotus tea works as a gift if you want one.",dup:"Two separate posts recommended this place."},
+ {id:"phuclong",n:"Phúc Long",cat:"food",sub:"Tea",a:null,ll:null,ad:"Chain. The poster's branch was on the way to Train Street",p:[8],
+  h:["Longan tea: good but a little sweet, served with a spoon for the longan","Vietnamese tea chain with many branches"]},
+ {id:"sincetea",n:"Since Tea",cat:"food",sub:"Tea",a:null,ll:null,ad:"Chain with several new Hanoi branches",p:[5],
+  h:["Fresh milk tea and egg tarts","Normal prices and tastes good, per the post"],w:"Posted by a food-delivery app's account."},
+ {id:"gumee",n:"Gumee",cat:"food",sub:"Tea",a:null,ll:null,ad:"Not given in the post",p:[6],
+  h:["Trà Sữa SupperCheese: milk tea topped with cheese cubes"],w:"Posted by Gumee's own account, so treat it as an ad."},
+ // ---- meals
+ {id:"tamvi",n:"Tầm Vị",cat:"food",sub:"Meal",a:"tl",ll:[21.0298,105.8378],ad:"4B P. Yên Thế, Văn Miếu, Đống Đa",p:[2],
+  h:["Michelin-starred, as the post flags","Northern Vietnamese home-style cooking in an old-style wooden dining room"],t:"Book ahead."},
+ {id:"huonglien",n:"Bún chả Hương Liên",cat:"food",sub:"Meal",a:"fq",ll:[21.0183,105.8531],ad:"24 P. Lê Văn Hưu, Hai Bà Trưng",p:[2],
+  h:["Where Obama and Anthony Bourdain ate bún chả in 2016","Order the 'Combo Obama': bún chả, a seafood spring roll and a Hanoi beer","Michelin Guide listed, per the post"]},
+ {id:"pho10",n:"Phở 10 Lý Quốc Sư",cat:"food",sub:"Meal",a:"oq",ll:[21.0307,105.8487],ad:"10 P. Lý Quốc Sư, Hoàn Kiếm",p:[2],
+  h:["Beef phở from one of the city's best-known phở shops","Around the corner from St Joseph's Cathedral"]},
+ {id:"banhmi25",n:"Bánh Mì 25",cat:"food",sub:"Meal",a:"oq",ll:[21.0357,105.8486],ad:"25 P. Hàng Cá, Hoàn Kiếm",p:[2],
+  h:["Popular bánh mì shop with lots of fillings to choose from","Easy grab-and-go between Old Quarter stops"]},
+ {id:"pizza4p",n:"Pizza 4P's Tràng Tiền",cat:"food",sub:"Meal",a:"fq",ll:[21.0246,105.8560],ad:"43 P. Tràng Tiền, Hoàn Kiếm",p:[2],
+  h:["Japanese-run pizza chain known for its house-made cheese; try the burrata","A good fallback when the group wants a break from Vietnamese food"],t:"Book ahead for dinner."},
+ {id:"banhcuon",n:"Bánh Cuốn Bà Hoành",cat:"food",sub:"Meal",a:"hbt",ll:[21.0136,105.8487],ap:1,ad:"66 P. Tô Hiến Thành, Hai Bà Trưng",p:[12],
+  h:["Steamed rice rolls (bánh cuốn)","Only appears as a pin on the city-walk map, next to the boutique row"]},
+ {id:"bebe",n:"Bún Lẩu Riêu Bề Bề",cat:"food",sub:"Meal",a:"cg",ll:[21.0333,105.7885],ap:1,ad:"A19 ngõ 66 Dịch Vọng Hậu, Cầu Giấy",p:[15],
+  h:["Seafood noodle soup with roe-filled squid, mantis shrimp, big prawns and crab-roe paste","Rice noodles or wide yellow noodles, with a side plate of extras","Light, slightly sour broth from tomato and crab; not heavy"],
+  pr:"70k VND a bowl",t:"The poster says it's good value but not worth a special trip from the centre.",w:"The post shows the shopfront but no address. This is the address listed for the Cầu Giấy shop of that name; confirm it's the same one."},
+ // ---- desserts
+ {id:"kemtt",n:"Kem Tràng Tiền",cat:"food",sub:"Dessert",a:"fq",ll:[21.0249,105.8551],ad:"35 P. Tràng Tiền, Hoàn Kiếm",p:[2],
+  h:["The city's most famous ice cream, per the post","Cheap bars and cones eaten standing; try the green rice (cốm) flavour"]},
+ {id:"doisua",n:"Đồi Sữa Bé",cat:"food",sub:"Dessert",a:"fq",ll:[21.0207,105.8503],ap:1,ad:"12 P. Ngô Văn Sở, Hoàn Kiếm",p:[11],
+  h:["One of five local dessert shops in the post, which only lists names and addresses","Two minutes from Tào phớ Jelly Bean"]},
+ {id:"jelly",n:"Tào phớ Jelly Bean",cat:"food",sub:"Dessert",a:"fq",ll:[21.0228,105.8494],ap:1,ad:"28 P. Quang Trung, Hoàn Kiếm",p:[11],
+  h:["Tào phớ: silken tofu pudding with syrup"]},
+ {id:"cot",n:"CỐT Hà Nội",cat:"food",sub:"Dessert",a:"oq",ll:[21.0385,105.8468],ap:1,ad:"17C P. Hàng Cót, Hoàn Kiếm",p:[11],
+  h:["One of five local dessert shops in the post, which only lists names and addresses"]},
+ {id:"bichbeo",n:"Chè Bích Béo",cat:"food",sub:"Dessert",a:"oq",ll:[21.0326,105.8478],ap:1,ad:"80 P. Hàng Điếu, Hoàn Kiếm",p:[11],
+  h:["Chè: Vietnamese sweet soups and puddings, hot or iced"]},
+ {id:"ganhsua",n:"Gánh Sữa",cat:"food",sub:"Dessert",a:"dd",ll:[21.0187,105.8243],ap:1,ad:"47 P. Võ Văn Dũng, Đống Đa",p:[11],
+  h:["One of five local dessert shops in the post","About 2 km west of the Temple of Literature"]},
+ // ---- sights
+ {id:"temple",n:"Temple of Literature",cat:"sight",sub:"Sight",a:"tl",ll:[21.0285,105.8355],ad:"58 P. Quốc Tử Giám, Đống Đa",p:[18],
+  h:["Hanoi's Confucian temple, laid out as five courtyards","Stone stelae record about 300 years of doctoral laureates; the youngest was 12","Khuê Văn Các pavilion, and the main hall with its Kangxi-era plaque","The exhibition is detailed; the poster suggests 3 hours"],
+  t:"About 2 km from Hoàn Kiếm Lake, so take a short Grab. Tickets are cheap; check opening hours."},
+ {id:"longbien",n:"Long Biên Bridge",cat:"sight",sub:"Sight",a:"oq",ll:[21.0436,105.8590],ad:"Long Biên Bridge, Hoàn Kiếm",p:[17],
+  h:["Steel railway bridge from 1902, still used by trains, motorbikes and pedestrians","Often credited to Eiffel's firm, as the post repeats","Best seen from Serein Café's terrace at sunset"]},
+ {id:"trainst",n:"Train Street",cat:"sight",sub:"Sight",a:"oq",ll:[21.0298,105.8446],ap:1,ad:"Phùng Hưng / Trần Phú section, Hoàn Kiếm",p:[12],
+  h:["Trains pass a few centimetres from the cafés lining the track","A bit outside the Old Quarter; the poster took a taxi"],
+  t:"Police have restricted access on and off. Check whether it's open and when trains pass before you go."},
+ {id:"incense",n:"Quảng Phú Cầu Incense Village",cat:"sight",sub:"Day trip",a:"trip",ll:[20.8135,105.7880],far:1,ap:1,ad:"Quảng Phú Cầu, Ứng Hòa",p:[16],
+  h:["Courtyards of drying incense sticks fanned out in red, pink and yellow","A popular photo spot","About 40 minutes by taxi from central Hanoi"],t:"Best light is 9–11am. Allow half a day including the drive."},
+ // ---- activities
+ {id:"nonla",n:"Nón Lá Healing Spa",cat:"activity",sub:"Head spa",a:"oq",ll:[21.0354,105.8476],ad:"27 P. Hàng Gà, Hoàn Kiếm",p:[9],
+  h:["Herbal head spa (gội đầu dưỡng sinh)","Also does relaxing, foot, and neck-and-shoulder massages","4.9 stars from about 2,000 Google reviews"],t:"Open until 10pm."},
+ {id:"hbarber",n:"H Barbershop",cat:"activity",sub:"Head spa",a:"bd",ll:[21.0378,105.8186],ap:1,ad:"29 P. Văn Cao, Ngọc Hà, Ba Đình",p:[10],
+  h:["'Emperor-style' head wash: full-body and foot care, shave, face mask, ear cleaning, nail trim","Massage on floor 2, hair wash on floor 3","Set A runs 100 minutes, Set B 120 minutes; prices include tips"],
+  pr:"Opening offer 580k (A) or 690k (B) VND with one therapist; usually 880k / 990k",
+  w:"Posted by an account named 'H.', and a commenter claims it's a paid post. The opening discount may have ended."},
+ // ---- shopping
+ {id:"vintage",n:"Vintage street (Đào Duy Từ)",cat:"shop",sub:"Vintage",a:"oq",ll:[21.0361,105.8538],ad:"Start at Xóm Vintage, 14 P. Đào Duy Từ",p:[13],
+  h:["Xóm Vintage: overseas design-brand watches, 70s bohemian, American denim, old textile cushions","Chăn Con Công (37 Đào Duy Từ): Japanese and French country-style women's vintage: floral skirts, waistcoats, embroidered knits","The Twenty Seven Klub: American workwear, vintage motorbike gear and tees; good for guys","Dau Hang: three floors, cheap on 1–2 and designer pieces on 3: 90s streetwear, Y2K, sportswear, denim","Thrift Day Hà Nội: cheap sporty vintage, jerseys and printed tees, men's and women's","Fresh by Mountain: vintage sportswear; the poster got an MLB beanie at half price"],
+  t:"The poster says the shops run along one street, so walk it end to end. Some small shops take cash only.",
+  w:"Only 7 of the post's 15 slides were recorded, so a few shops may be missing. Dau Hang's Instagram lists Saigon addresses; check it has a Hanoi shop."},
+ {id:"carpediem",n:"Carpe Diem",cat:"shop",sub:"Candles",a:"oq",ll:[21.0368,105.8540],ad:"50A P. Đào Duy Từ, Hoàn Kiếm",p:[12],
+  h:["Handmade Vietnamese scented candles in good-looking jars","Cool, restrained scents; nice as home decor","On the same street as the vintage shops"]},
+ {id:"angels",n:"Angel's House",cat:"shop",sub:"Vintage",a:"oq",ll:[21.0302,105.8463],ad:"2nd floor, 120 P. Hàng Bông, Hoàn Kiếm",p:[13],
+  h:["Fairy-meets-grunge vintage: dark, soft, Western retro","A second shop at 11C Lò Rèn"],t:"The shop says to park bikes at Việt Đức Hospital."},
+ {id:"culcat",n:"CULCAT Hanoi",cat:"shop",sub:"Souvenirs",a:"oq",ll:[21.0292,105.8483],ap:1,ad:"Next to St Joseph's Cathedral",p:[14],
+  h:["Cat illustrations of Vietnamese daily life: noodle stalls, bánh mì, phin coffee","Keychains, fridge magnets, canvas bags","Small shop, but packed"]},
+ {id:"marou",n:"Maison Marou",cat:"shop",sub:"Souvenirs",a:"fq",ll:[21.0255,105.8466],ap:1,ad:"91A P. Thợ Nhuộm, Hoàn Kiếm",p:[14],
+  h:["Chocolate made from Vietnamese cacao, with tastings","Bars by cocoa percentage, plus limited flavours that change through the year","The poster's top pick for a food gift"]},
+ {id:"montsand",n:"Montsand",cat:"shop",sub:"Boutique",a:"fq",ll:[21.0237,105.8582],ap:1,ad:"Near the Opera House",p:[12],
+  h:["Formerly the well-known Lobbster; moved near the Opera House","More tailored, design-led cuts; the poster says it's worth a special trip"]},
+ {id:"maven",n:"The Maven",cat:"shop",sub:"Boutique",a:"hbt",ll:[21.0168,105.8500],ap:1,ad:"Boutique row off P. Trần Nhân Tông (see the post's map)",p:[12],
+  h:["Women's boutique with a relaxed, effortless style","The poster found the whole row very easy to buy from"],t:"Bring cash; some small boutiques take nothing else."},
+ {id:"cara",n:"Cara Club",cat:"shop",sub:"Boutique",a:"hbt",ll:[21.0158,105.8500],ap:1,ad:"Boutique row off P. Trần Nhân Tông (see the post's map)",p:[12],
+  h:["Women's boutique on the same row as The Maven and White Ant"]},
+ {id:"whiteant",n:"White Ant Store",cat:"shop",sub:"Boutique",a:"hbt",ll:[21.0149,105.8500],ap:1,ad:"Boutique row off P. Trần Nhân Tông (see the post's map)",p:[12],
+  h:["Women's boutique; the poster suggests starting the walk here or at The Maven"]},
+ {id:"huong",n:"Huong Boutique",cat:"shop",sub:"Boutique",a:"hbt",ll:[21.0127,105.8500],ap:1,ad:"South end of the boutique row (see the post's map)",p:[12],
+  h:["Clothing boutique at the south end of the row, near Bánh Cuốn Bà Hoành"]},
+ {id:"bagian",n:"Maison Bagian",cat:"shop",sub:"Candles",a:null,ll:null,ad:"Not given in the post",p:[12],
+  h:["Bigger range than Carpe Diem: candles, essential oils, pillow sprays and perfume"]},
+ {id:"goigem",n:"Gối Gém Café & Local Art Store",cat:"shop",sub:"Souvenirs",a:null,ll:null,ad:"Not given in the post (Old Quarter)",p:[14],
+  h:["Half café, half illustrated souvenir shop","Fun fridge magnets, lots of duck designs","The poster sat an hour over a matcha; popular with locals"]},
+ {id:"tiredcity",n:"TiredCity Creative",cat:"shop",sub:"Souvenirs",a:null,ll:null,ad:"Several shops; none named in the post",p:[14],
+  h:["Illustrations of everyday Vietnam: phin coffee, breakfast, motorbikes","Pins with a local feel"]},
+ {id:"raw",n:"The Raw Compound",cat:"shop",sub:"Streetwear",a:null,ll:null,ad:"Not given in the post (outside the centre)",p:[1],
+  h:["Concept store in a converted factory","Ground floor has the best-known local streetwear brands; the poster says floor 2 is better"],
+  w:"Posted by a shopping agent who sells these brands. The top comments say the clothes are overpriced, the designs plain, and the location far out."}
+];
+
+/* ---------- Day 1 comes from a friend's plan; add place ids here once it's in ---------- */
+const DAY1 = { by:"", items:[], note:"Waiting for the Day 1 plan from the group. Send it to Claude to add it here." };
+const DAY_COLORS = {1:"--d1",3:"--d3",4:"--d4"};
+
+const BY = Object.fromEntries(PLACES.map(p=>[p.id,p]));
+const LAT0=21.03, LNG0=105.85, KX=Math.cos(LAT0*Math.PI/180)*111320, KY=110574;
+const P=(lat,lng)=>[(lng-LNG0)*KX, -(lat-LAT0)*KY];
+PLACES.forEach(p=>{ if(p.ll){ const [x,y]=P(p.ll[0],p.ll[1]); p.x=x; p.y=y; } });
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+const walkMin=m=>Math.max(1,Math.round(m*1.3/80));
+const AREA_ORDER=Object.keys(AREAS);
+const ICON={
+ food:'<path d="M2.5 4.5h7v3a3 3 0 0 1-3 3h-1a3 3 0 0 1-3-3zM9.5 5.5h1a1.5 1.5 0 0 1 0 3h-1M4 1.5v1.5M6.5 1.5v1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+ sight:'<path d="M1.5 5 6.5 2l5 3M3 6v4.5M6.5 6v4.5M10 6v4.5M1.5 11.5h10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
+ activity:'<path d="M6.5 1.2l1.3 3.6 3.7 1.4-3.7 1.4-1.3 3.6-1.3-3.6L1.5 6.2l3.7-1.4z" fill="currentColor"/>',
+ shop:'<path d="M2.5 4.5h8l-.7 7H3.2zM4.6 4.5v-1a1.9 1.9 0 0 1 3.8 0v1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'
+};
+const svgIcon=c=>`<svg viewBox="0 0 13 13" aria-hidden="true">${ICON[c]}</svg>`;
+const catColor=c=>`var(${CATS[c].c})`;
+const cssVar=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const $=s=>document.querySelector(s);
+const store={get(k){try{return localStorage.getItem(k)}catch{return null}},set(k,v){try{localStorage.setItem(k,v)}catch{}}};
+
+/* ---------- state ---------- */
+const S={tab:"all",sub:"all",open:new Set(),sel:null,picksOnly:false,nearSort:false,activeDay:null,
+  name:store.get("hhl-name")||"",votes:[],sugg:[],days:{3:[],4:[]},here:null,loaded:false};
+function voteMap(){ const m={}; for(const v of S.votes){ (m[v.place]=m[v.place]||{})[v.name]=v.vote; } return m; }
+let VM={};
+function tally(id){ const t={1:[],0:[],"-1":[]}; for(const [n,v] of Object.entries(VM[id]||{})) if(t[v]) t[v].push(n); return t; }
+const mine=id=>{ const r=VM[id]||{}; const k=Object.keys(r).find(n=>n.toLowerCase()===S.name.toLowerCase()); return k===undefined?undefined:r[k]; };
+const isPick=id=>{ const t=tally(id); return t[1].length>0&&t[1].length>t[-1].length; };
+const dayOf=id=>{ for(const d of [1,3,4]){ const list=d===1?DAY1.items:S.days[d]; if(list.includes(id)) return d; } return null; };
+function visible(p){
+  if(S.tab!=="all"&&S.tab!=="days"&&p.cat!==S.tab) return false;
+  if(S.sub!=="all"&&p.sub!==S.sub) return false;
+  if(S.picksOnly&&!isPick(p.id)) return false;
+  return true;
+}
+const hereXY=()=>S.here?(([x,y])=>({x,y}))(P(S.here.lat,S.here.lng)):null;
+
+/* ---------- backend (Google Sheet via Apps Script) ---------- */
+const connected=()=>/^https:\/\/script\.google\.com\//.test(CONFIG.votesUrl);
+let lastSync=0, posting=0;
+async function pull(){
+  if(!connected()){ setSync(); return; }
+  try{ const r=await fetch(CONFIG.votesUrl,{cache:"no-store"}); const d=await r.json(); if(!posting) apply(d); lastSync=Date.now(); setSync(); }
+  catch{ setSync("Couldn't reach the vote sheet. Showing the last saved state."); }
+}
+async function push(body){
+  if(!connected()){ toast("Voting isn't connected yet"); return false; }
+  if(!S.name){ askName(); toast("Add your name first"); return false; }
+  posting++;
+  try{ const r=await fetch(CONFIG.votesUrl,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({...body,name:S.name})});
+    const d=await r.json(); posting--; if(d.error){ toast(d.error); return false; } if(!posting) apply(d); lastSync=Date.now(); setSync(); return true; }
+  catch{ posting--; toast("Not saved. Check your connection."); pull(); return false; }
+}
+function apply(d){
+  S.votes=(d.votes||[]).filter(v=>BY[v.place]); VM=voteMap();
+  S.sugg=d.suggestions||[];
+  S.days={3:(d.days?.["3"]||[]).filter(id=>BY[id]),4:(d.days?.["4"]||[]).filter(id=>BY[id])};
+  S.loaded=true; renderAll();
+}
+function setSync(err){
+  const el=$("#sync");
+  if(!connected()){ el.textContent="Voting isn't connected yet: the page owner still needs to add the Google Sheet link."; return; }
+  if(err){ el.textContent=err; return; }
+  const people=new Set(S.votes.map(v=>v.name.toLowerCase())).size;
+  el.textContent=`${people} ${people===1?"person has":"people have"} voted · synced ${lastSync?new Date(lastSync).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}):"…"}`;
+}
+setInterval(()=>{ if(document.visibilityState==="visible") pull(); },25000);
+document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") pull(); });
+
+/* ---------- name ---------- */
+function renderWho(edit){
+  const box=$("#who");
+  if(S.name&&!edit){ box.innerHTML=`<span>Voting as <b>${esc(S.name)}</b></span><button class="linkbtn" type="button" id="chName">change</button>`; $("#chName").onclick=()=>renderWho(true); return; }
+  box.innerHTML=`<form id="nameForm"><input type="text" id="nameIn" maxlength="40" placeholder="Your name, so votes show who's who" value="${esc(S.name)}" autocomplete="given-name"><button class="btn primary" type="submit">Save</button></form>`;
+  $("#nameForm").onsubmit=e=>{ e.preventDefault(); const v=$("#nameIn").value.trim(); if(!v) return; S.name=v; store.set("hhl-name",v); renderWho(); renderAll(); toast(`Hi ${v}`); };
+}
+function askName(){ renderWho(true); $("#nameIn")?.focus(); $("#who").scrollIntoView({block:"center",behavior:"smooth"}); }
+
+/* ---------- votes, days ---------- */
+async function castVote(id,v){
+  const cur=mine(id); const next=cur===v?null:v;
+  // optimistic update
+  S.votes=S.votes.filter(x=>!(x.place===id&&x.name.toLowerCase()===S.name.toLowerCase()));
+  if(next!==null&&S.name) S.votes.push({name:S.name,place:id,vote:next});
+  VM=voteMap(); refreshPlace(id); updateMarkers();
+  await push({type:"vote",place:id,vote:next});
+}
+async function setDay(d,items){ S.days[d]=items; renderDays(); updateMarkers(); drawRoute(); refreshPlace(S.sel); await push({type:"day",day:String(d),items}); }
+function addToDay(id,d){
+  if(!S.name){ askName(); return; }
+  const cur=dayOf(id); if(cur===1){ toast("Already in Day 1"); return; }
+  for(const k of [3,4]) if(k!==d&&S.days[k].includes(id)) S.days[k]=S.days[k].filter(x=>x!==id);
+  const list=S.days[d].includes(id)?S.days[d].filter(x=>x!==id):[...S.days[d],id];
+  setDay(d,list); toast(list.includes(id)?`Added to Day ${d}`:`Removed from Day ${d}`);
+}
+
+/* ---------- panel ---------- */
+const TABS=()=>[["all","All",null,PLACES.length],...Object.entries(CATS).map(([k,v])=>[k,v.n,v.c,PLACES.filter(p=>p.cat===k).length]),["days","Day plan",null,null]];
+function renderTabs(){
+  const box=$("#cats"); box.textContent="";
+  for(const [k,n,c,cnt] of TABS()){ const b=document.createElement("button"); b.type="button"; b.className="tab"; b.setAttribute("aria-pressed",S.tab===k);
+    b.innerHTML=(c?`<span class="dot" style="background:var(${c})"></span>`:"")+esc(n)+(cnt!=null?` <span class="count">${cnt}</span>`:"");
+    b.onclick=()=>{ S.tab=k; S.sub="all"; if(k==="days"&&!S.activeDay) S.activeDay=3; renderAll(); if(k==="days") fitDay(S.activeDay); }; box.appendChild(b); }
+  const days=S.tab==="days"; $("#placesView").hidden=days; $("#daysView").hidden=!days;
+  $("#catsum").textContent=S.tab==="all"?"51 places from 19 posts: 31 food and drink, 4 sights, 2 activities, 14 shopping stops. Open an area to see its places, and open a place for details, votes and what's nearby.":CATS[S.tab]?.s||"";
+  const subs=$("#subs"); subs.textContent=""; subs.hidden=S.tab!=="food";
+  if(S.tab==="food"){ const sc={}; PLACES.filter(p=>p.cat==="food").forEach(p=>sc[p.sub]=(sc[p.sub]||0)+1);
+    [["all","All food"],...Object.keys(sc).map(k=>[k,k])].forEach(([k,n])=>{ const b=document.createElement("button"); b.type="button"; b.className="tab"; b.setAttribute("aria-pressed",S.sub===k);
+      b.innerHTML=esc(n)+(k!=="all"?` <span class="count">${sc[k]}</span>`:""); b.onclick=()=>{S.sub=k;renderAll();}; subs.appendChild(b); }); }
+}
+const initials=n=>n.split(/\s+/).map(w=>w[0]).join("").slice(0,2).toUpperCase();
+const hue=n=>{ let h=0; for(const c of n) h=(h*31+c.charCodeAt(0))%360; return `hsl(${h} 55% 45%)`; };
+function voteBox(p){
+  const t=tally(p.id), m=mine(p.id);
+  const btn=(v,l)=>`<button type="button" data-vote="${p.id}" data-v="${v}" aria-pressed="${m===v}">${l}</button>`;
+  const faces=t[1].slice(0,6).map(n=>`<span class="face" style="background:${hue(n.toLowerCase())}" title="${esc(n)}">${esc(initials(n))}</span>`).join("");
+  const tl=[t[1].length&&`${t[1].length} want`,t[0].length&&`${t[0].length} maybe`,t[-1].length&&`${t[-1].length} skip`].filter(Boolean).join(" · ");
+  const who=t[1].length?` <span title="${esc(t[1].join(", "))}">(${esc(t[1].slice(0,3).join(", "))}${t[1].length>3?"…":""})</span>`:"";
+  return `<div class="vrow"><span class="votes">${btn(1,"Want")}${btn(0,"Maybe")}${btn(-1,"Skip")}</span><span class="tally">${tl?`<span class="faces">${faces}</span>${tl}${who}`:"No votes yet"}</span></div>`;
+}
+const GMAP=p=>"https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(p.n+(p.ll&&!/^(Not given|Any branch|Chain|Several|Boutique row|South end|Near|Next to|By )/.test(p.ad)?", "+p.ad:"")+", Hanoi");
+function nearby(p){ return PLACES.filter(q=>q.ll&&q.id!==p.id&&!q.far).map(q=>({p:q,m:dist(p,q)})).filter(o=>walkMin(o.m)<=15).sort((a,b)=>a.m-b.m).slice(0,8); }
+function placeBody(p){
+  const near=p.ll&&!p.far?nearby(p):[]; const d=dayOf(p.id);
+  const posts=p.p.map(i=>`<a href="${POSTS[i].u}" target="_blank" rel="noopener">${esc(POSTS[i].t)}</a>`).join(" · ");
+  return `<div class="pbody">
+    <span class="addr">${esc(p.ad)}${p.ap?" · pin approximate":""}</span>
+    ${voteBox(p)}
+    <ol class="hl">${p.h.map(x=>`<li>${esc(x)}</li>`).join("")}</ol>
+    ${p.pr?`<p class="note"><b>Price:</b> ${esc(p.pr)}</p>`:""}
+    ${p.t?`<p class="note"><b>Tip:</b> ${esc(p.t)}</p>`:""}
+    ${p.w?`<p class="note warn"><b>Check:</b> ${esc(p.w)}</p>`:""}
+    <div class="btns">
+      <a class="btn primary" href="${GMAP(p)}" target="_blank" rel="noopener">Open in Google Maps</a>
+      ${p.ll&&!p.far?`<button class="btn" type="button" data-show="${p.id}">Show on map</button>`:""}
+      ${d===1?`<span class="btn" aria-disabled="true">In Day 1</span>`:`<button class="btn" type="button" data-addday="3" data-id="${p.id}" aria-pressed="${d===3}">${d===3?"✓ Day 3":"+ Day 3"}</button><button class="btn" type="button" data-addday="4" data-id="${p.id}" aria-pressed="${d===4}">${d===4?"✓ Day 4":"+ Day 4"}</button>`}
+    </div>
+    ${near.length?`<div><h2 style="margin-bottom:4px">Within a 15-min walk</h2><div class="near">${near.map(o=>`<button type="button" data-goto="${o.p.id}"><span class="dot" style="background:${catColor(o.p.cat)}"></span><span>${esc(o.p.n)} <span class="addr">· ${esc(o.p.sub)}</span></span><span class="mins">${walkMin(o.m)} min</span></button>`).join("")}</div></div>`:""}
+    <p class="addr">From ${p.p.length>1?"posts":"the post"}: ${posts}${p.dup?" · "+esc(p.dup):""}</p>
+  </div>`;
+}
+function placeEl(p){
+  const open=S.sel===p.id, t=tally(p.id), d=dayOf(p.id), h=hereXY();
+  const el=document.createElement("div"); el.className="place"+(open?" open":""); el.id="pl-"+p.id;
+  const meta=[esc(p.sub)]; if(d) meta.push(`<span class="pill dp" style="background:var(${DAY_COLORS[d]})">Day ${d}</span>`); if(p.w) meta.push('<span class="pill">Check</span>'); if(p.dup) meta.push('<span class="pill n">2 posts</span>');
+  const side=[t[1].length?`<span class="score">${t[1].length} want</span>`:"", h&&p.ll?`<span class="dist">${fmtDist(dist(h,p))}</span>`:""].join("");
+  el.innerHTML=`<button type="button" class="prow" data-toggle="${p.id}" aria-expanded="${open}"><span class="ico" style="background:${catColor(p.cat)}">${svgIcon(p.cat)}</span><span style="min-width:0"><span class="pn">${esc(p.n)}</span><span class="pm">${meta.join("")}</span></span><span class="side">${side}</span></button>${open?placeBody(p):""}`;
+  return el;
+}
+const fmtDist=m=>m<950?`${Math.round(m/10)*10} m`:`${(m/1000).toFixed(1)} km`;
+const GROUPS=()=>[...AREA_ORDER.map(a=>({k:a,n:AREAS[a].n,t:AREAS[a].t,s:AREAS[a].s,list:PLACES.filter(p=>p.a===a)})),{k:"none",n:"No pin yet",t:"Chains and posts with no address",s:"Chains with many branches, or posts that never gave an address.",list:PLACES.filter(p=>!p.ll)}];
+const score=p=>{const t=tally(p.id); return t[1].length*2+t[0].length-t[-1].length*2;};
+function renderGroups(){
+  const box=$("#groups"); box.textContent=""; const h=hereXY();
+  if(S.nearSort&&h){
+    const list=PLACES.filter(p=>p.ll&&!p.far&&visible(p)).sort((a,b)=>dist(h,a)-dist(h,b));
+    const sec=document.createElement("section"); sec.className="group open";
+    sec.innerHTML=`<div class="ghead" style="cursor:default"><span><span class="gn">Closest to you</span><span class="gt">Straight-line distance from your location</span></span><span class="gc">${list.length}</span></div>`;
+    const body=document.createElement("div"); body.className="gbody"; list.forEach(p=>body.appendChild(placeEl(p))); sec.appendChild(body); box.appendChild(sec); return;
+  }
+  for(const g of GROUPS()){
+    const list=g.list.filter(visible).sort((a,b)=>score(b)-score(a)||a.n.localeCompare(b.n)); if(!list.length) continue;
+    const open=S.open.has(g.k); const sec=document.createElement("section"); sec.className="group"+(open?" open":""); sec.id="grp-"+g.k;
+    sec.innerHTML=`<button type="button" class="ghead" data-area-toggle="${g.k}" aria-expanded="${open}"><span><span class="gn">${esc(g.n)}</span><span class="gt">${esc(g.t)}</span></span><span class="gc">${list.length}</span><svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
+    if(open){ const body=document.createElement("div"); body.className="gbody"; body.innerHTML=`<p class="gsum">${esc(g.s)}</p>`; list.forEach(p=>body.appendChild(placeEl(p))); sec.appendChild(body); }
+    box.appendChild(sec);
+  }
+  if(!box.children.length){ const e=document.createElement("p"); e.className="sub"; e.style.padding="12px 0"; e.textContent=S.picksOnly?"No group picks yet. They appear once people vote Want.":"Nothing matches these filters."; box.appendChild(e); }
+}
+function refreshPlace(id){ if(!id) return; const old=document.getElementById("pl-"+id); if(old) old.replaceWith(placeEl(BY[id])); }
+
+function legs(items){ let tot=0; const out=[]; for(let i=1;i<items.length;i++){ const a=BY[items[i-1]], b=BY[items[i]]; const m=a.ll&&b.ll&&!a.far&&!b.far?walkMin(dist(a,b)):null; out.push(m); if(m) tot+=m; } return {out,tot}; }
+function routeUrl(items){
+  const ps=items.map(id=>BY[id]).filter(p=>p.ll); if(ps.length<2) return null;
+  const q=p=>encodeURIComponent(p.n+", "+(p.ap?"Hanoi":p.ad+", Hanoi"));
+  const mid=ps.slice(1,-1).slice(0,8).map(q).join("%7C");
+  return `https://www.google.com/maps/dir/?api=1&travelmode=walking&origin=${q(ps[0])}&destination=${q(ps[ps.length-1])}${mid?"&waypoints="+mid:""}`;
+}
+function dayCard(d,title,items,opts={}){
+  const {out,tot}=legs(items); const c=`var(${DAY_COLORS[d]})`; const url=routeUrl(items); const on=S.activeDay===d;
+  const stops=items.map((id,i)=>{ const p=BY[id];
+    return `${i?`<li class="leg">${out[i-1]?`${out[i-1]} min walk`:"Grab or taxi"}</li>`:""}<li class="stop"><span class="num">${i+1}</span><button type="button" class="sn" data-goto="${id}">${esc(p.n)}<span class="addr"> · ${esc(p.sub)}${p.a?" · "+esc(AREAS[p.a].n):""}</span></button>${opts.locked?"<span></span>":`<span class="sctl"><button type="button" aria-label="Move up" data-mv="${d}:${i}:-1" ${i?"":"disabled"}>↑</button><button type="button" aria-label="Move down" data-mv="${d}:${i}:1" ${i<items.length-1?"":"disabled"}>↓</button><button type="button" aria-label="Remove" data-rm="${d}:${id}">✕</button></span>`}</li>`; }).join("");
+  return `<section class="day${on?" on":""}" style="--dc:${c}" id="day-${d}">
+    <div class="dhead"><span class="dname"><span class="dot" style="background:${c}"></span>${esc(title)}</span><span class="dmeta">${items.length} stop${items.length===1?"":"s"}${tot?` · ~${tot} min walking`:""}</span></div>
+    ${opts.note?`<p class="sub">${esc(opts.note)}</p>`:""}
+    ${items.length?`<ol class="stops">${stops}</ol>`:(opts.locked?"":`<p class="empty">Nothing yet. Open a place and tap <b>+ Day ${d}</b>, or use the group's picks below.</p>`)}
+    <div class="btns">${items.length?`<button class="btn" type="button" data-showday="${d}" aria-pressed="${on}">${on?"Showing on map":"Show on map"}</button>`:""}${url?`<a class="btn primary" href="${url}" target="_blank" rel="noopener">Walking route in Google Maps</a>`:""}</div>
+  </section>`;
+}
+function renderDays(){
+  const box=$("#days"); if(!box) return;
+  const picks=PLACES.filter(p=>isPick(p.id)&&!dayOf(p.id)&&p.ll);
+  box.innerHTML=
+    dayCard(1,"Day 1 · Planned by the group",DAY1.items,{locked:true,note:DAY1.items.length?(DAY1.by?`From ${DAY1.by}'s plan.`:""):DAY1.note})+
+    `<section class="day" style="--dc:var(--sight)"><div class="dhead"><span class="dname"><span class="dot" style="background:var(--sight)"></span>Day 2 · Ha Long Bay cruise</span><span class="dmeta">booked</span></div><p class="sub">The cruise is booked, so nothing to plan in Hanoi today.</p></section>`+
+    dayCard(3,"Day 3",S.days[3])+dayCard(4,"Day 4",S.days[4])+
+    `<section class="day" style="--dc:var(--want)"><div class="dhead"><span class="dname">Group picks not in a day yet</span><span class="dmeta">${picks.length}</span></div>
+     ${picks.length?`<div class="near">${picks.sort((a,b)=>score(b)-score(a)).map(p=>`<div style="display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:4px 0"><span class="dot" style="background:${catColor(p.cat)}"></span><button type="button" class="sn" data-goto="${p.id}" style="border:0;background:none;padding:0;text-align:left;font-weight:600;cursor:pointer">${esc(p.n)} <span class="addr">· ${esc(AREAS[p.a].n)} · ${tally(p.id)[1].length} want</span></button><span class="sctl"><button type="button" data-addday="3" data-id="${p.id}" style="width:auto;padding:0 8px">D3</button><button type="button" data-addday="4" data-id="${p.id}" style="width:auto;padding:0 8px">D4</button></span></div>`).join("")}</div>`:`<p class="empty">Picks appear here once people vote Want.</p>`}
+    </section>`;
+}
+function renderAll(){ renderTabs(); renderGroups(); renderDays(); renderSugg(); setSync(); updateMarkers(); drawRoute(); }
+
+/* ---------- interactions ---------- */
+function openArea(k,fromMap){
+  const was=S.open.has(k); if(fromMap) S.open.add(k); else was?S.open.delete(k):S.open.add(k);
+  if(S.tab==="days"){ S.tab="all"; } renderAll();
+  if((!was||fromMap)&&k!=="none") fitArea(k);
+  if(fromMap) document.getElementById("grp-"+k)?.scrollIntoView({block:"start",behavior:"smooth"});
+}
+function openPlace(id,{fromMap=false,fromList=false}={}){
+  const p=BY[id], prev=S.sel;
+  if(fromList&&prev===id){ S.sel=null; refreshPlace(id); updateMarkers(); return; }
+  S.sel=id;
+  if(S.tab==="days"||(S.tab!=="all"&&S.tab!==p.cat)){ S.tab="all"; S.sub="all"; }
+  const g=p.a||"none";
+  if(!S.open.has(g)||S.nearSort===false&&!document.getElementById("pl-"+id)){ S.open.add(g); renderAll(); } else { refreshPlace(prev); refreshPlace(id); }
+  if(p.ll&&!p.far) flyToPlace(p); updateMarkers();
+  requestAnimationFrame(()=>document.getElementById("pl-"+id)?.scrollIntoView({block:fromList?"nearest":"start",behavior:"smooth"}));
+}
+document.addEventListener("click",e=>{
+  const t=e.target.closest("button,a"); if(!t) return; const ds=t.dataset;
+  if(ds.vote){ if(!S.name){ askName(); return; } castVote(ds.vote,Number(ds.v)); return; }
+  if(ds.toggle){ openPlace(ds.toggle,{fromList:true}); return; }
+  if(ds.goto){ openPlace(ds.goto,{}); return; }
+  if(ds.show){ flyToPlace(BY[ds.show],17); if(innerWidth<=860) scrollTo({top:0,behavior:"smooth"}); return; }
+  if(ds.addday){ addToDay(ds.id,Number(ds.addday)); return; }
+  if(ds.showday){ const d=Number(ds.showday); S.activeDay=S.activeDay===d?null:d; renderDays(); updateMarkers(); drawRoute(); if(S.activeDay) fitDay(d); return; }
+  if(ds.mv){ const [d,i,dir]=ds.mv.split(":").map(Number); const l=[...S.days[d]]; const j=i+dir; if(j<0||j>=l.length) return; [l[i],l[j]]=[l[j],l[i]]; setDay(d,l); return; }
+  if(ds.rm){ const [d,id]=ds.rm.split(":"); setDay(Number(d),S.days[d].filter(x=>x!==id)); return; }
+  if(ds.areaToggle){ openArea(ds.areaToggle,false); return; }
+  if(ds.style){ setStyle(ds.style); return; }
+});
+$("#picksOnly").onchange=e=>{S.picksOnly=e.target.checked; renderAll();};
+$("#nearSort").onchange=e=>{ S.nearSort=e.target.checked; if(S.nearSort&&!S.here){ locateMe(); } renderGroups(); };
+
+/* ---------- suggestions / shortlist ---------- */
+function renderSugg(){
+  const box=$("#sugglist"); box.textContent=""; const items=S.sugg.slice().reverse();
+  if(!items.length) return;
+  const h=document.createElement("b"); h.textContent=`${items.length} waiting to be added`; box.appendChild(h);
+  items.forEach(s=>{ const d=document.createElement("div"); const a=document.createElement("a"); a.href=/^https?:\/\//.test(s.link)?s.link:"#"; a.target="_blank"; a.rel="noopener"; a.textContent=s.place||s.link; d.appendChild(a);
+    const m=document.createElement("span"); m.className="addr"; m.textContent=` · ${s.name||"Someone"}${s.note?": "+s.note:""}`; d.appendChild(m); box.appendChild(d); });
+}
+$("#suggest").addEventListener("submit",async e=>{ e.preventDefault(); $("#sBtn").disabled=true;
+  const ok=await push({type:"suggest",link:$("#sLink").value.trim(),place:$("#sName").value.trim(),note:$("#sNote").value.trim()});
+  if(ok){ e.target.reset(); toast("Added to the queue"); } $("#sBtn").disabled=false; });
+let tt=0; function toast(m){ const t=$("#toast"); t.textContent=m; t.classList.add("on"); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("on"),2200); }
+$("#copyBtn").onclick=async()=>{
+  const picks=PLACES.filter(p=>isPick(p.id)); if(!picks.length){ toast("No group picks yet. Vote first."); return; }
+  const lines=["Hanoi shortlist"]; for(const g of GROUPS()){ const ps=g.list.filter(p=>isPick(p.id)); if(!ps.length) continue; lines.push("",g.n); ps.forEach(p=>lines.push(`- ${p.n} (${tally(p.id)[1].length} want): ${GMAP(p)}`)); }
+  try{ await navigator.clipboard.writeText(lines.join("\n")); toast(`Copied ${picks.length} places`); } catch{ toast("Copy blocked by the browser"); }
+};
+
+/* ---------- map ---------- */
+let map=null, markers={}, bubbles={}, curStyle="detailed";
+const wrapEl=document.querySelector(".mapwrap");
+function hull(pts){ pts=pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]); const cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+  const lo=[],up=[]; for(const p of pts){ while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],p)<=0) lo.pop(); lo.push(p);} for(const p of pts.slice().reverse()){ while(up.length>=2&&cr(up[up.length-2],up[up.length-1],p)<=0) up.pop(); up.push(p);} return lo.slice(0,-1).concat(up.slice(0,-1)); }
+function focusRing(){
+  const pts=[]; for(const p of PLACES) if(p.ll&&!p.far&&p.a!=="cg"&&p.a!=="dd") for(let k=0;k<20;k++){ const a=k/20*Math.PI*2; pts.push([p.ll[1]+Math.cos(a)*0.0048,p.ll[0]+Math.sin(a)*0.0045]); }
+  const h=hull(pts); h.push(h[0]); return h;
+}
+function addOverlays(){
+  if(!map.getSource("wash")){
+    const world=[[100,15],[112,15],[112,27],[100,27],[100,15]];
+    map.addSource("wash",{type:"geojson",data:{type:"Feature",geometry:{type:"Polygon",coordinates:[world,focusRing().reverse()]}}});
+    map.addLayer({id:"wash",type:"fill",source:"wash",paint:{"fill-color":"#f4f2ee","fill-opacity":["interpolate",["linear"],["zoom"],10,0.25,13,0.55,15,0.65]}});
+  }
+  if(!map.getSource("route")){
+    map.addSource("route",{type:"geojson",data:{type:"FeatureCollection",features:[]}});
+    map.addLayer({id:"route-casing",type:"line",source:"route",layout:{"line-cap":"round","line-join":"round"},paint:{"line-color":"#ffffff","line-width":8,"line-opacity":.9}});
+    map.addLayer({id:"route",type:"line",source:"route",layout:{"line-cap":"round","line-join":"round"},paint:{"line-color":["get","c"],"line-width":4,"line-dasharray":[1.5,1.2]}});
+  }
+  // quieter basemap: hide shop/restaurant icons so the group's pins stand out
+  for(const l of map.getStyle().layers||[]){ if(/poi/i.test(l.id)&&l.type==="symbol") map.setLayoutProperty(l.id,"visibility","none"); }
+  drawRoute();
+}
+function setStyle(k){ if(!map||k===curStyle) return; curStyle=k; document.querySelectorAll("[data-style]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.style===k)); map.setStyle(CONFIG.styles[k]); }
+function drawRoute(){
+  if(!map||!map.getSource("route")) return;
+  const feats=[]; const d=S.activeDay;
+  if(d){ const items=(d===1?DAY1.items:S.days[d]).map(id=>BY[id]).filter(p=>p.ll&&!p.far);
+    if(items.length>1) feats.push({type:"Feature",properties:{c:cssVar(DAY_COLORS[d])},geometry:{type:"LineString",coordinates:items.map(p=>[p.ll[1],p.ll[0]])}}); }
+  map.getSource("route").setData({type:"FeatureCollection",features:feats});
+}
+function makeMarkers(){
+  for(const p of PLACES){ if(!p.ll||p.far) continue;
+    const el=document.createElement("div"); el.className="pin"; el.innerHTML=`<span class="b" style="background:${catColor(p.cat)}">${svgIcon(p.cat)}</span><span class="dn"></span><span class="lab">${esc(p.n)}</span>`;
+    el.title=p.n; el.addEventListener("click",ev=>{ ev.stopPropagation(); openPlace(p.id,{fromMap:true}); });
+    markers[p.id]={el,m:new maplibregl.Marker({element:el}).setLngLat([p.ll[1],p.ll[0]]).addTo(map)}; }
+  for(const a of AREA_ORDER){ const ps=PLACES.filter(p=>p.a===a&&p.ll&&!p.far); if(!ps.length) continue;
+    const lng=ps.reduce((s,p)=>s+p.ll[1],0)/ps.length, lat=ps.reduce((s,p)=>s+p.ll[0],0)/ps.length;
+    const el=document.createElement("div"); el.className="bub"; el.innerHTML=`<span class="c"></span><span class="t">${esc(AREAS[a].n)}</span>`;
+    el.addEventListener("click",ev=>{ ev.stopPropagation(); openArea(a,true); });
+    bubbles[a]={el,m:new maplibregl.Marker({element:el}).setLngLat([lng,lat]).addTo(map)}; }
+}
+function updateMarkers(){
+  if(!map) return; const z=map.getZoom(); const sel=S.sel&&BY[S.sel];
+  const near=sel&&sel.ll?new Set(nearby(sel).map(n=>n.p.id)):new Set();
+  const clusters=z<13.1;
+  wrapEl.classList.toggle("small",z<14.3);
+  const shownBoxes=[];
+  const list=Object.entries(markers).map(([id,o])=>({id,o,p:BY[id]}));
+  list.sort((a,b)=>(b.id===S.sel)-(a.id===S.sel)||score(b.p)-score(a.p));
+  for(const {id,o,p} of list){
+    const vis=visible(p)&&!clusters; o.el.style.display=vis?"":"none"; if(!vis) continue;
+    const d=dayOf(id), dayOn=S.activeDay&&d===S.activeDay;
+    o.el.classList.toggle("sel",id===S.sel); o.el.classList.toggle("pick",isPick(id));
+    o.el.classList.toggle("dim",!!(sel&&id!==S.sel&&!near.has(id))||(!!S.activeDay&&!dayOn&&id!==S.sel));
+    o.el.classList.toggle("inday",!!dayOn);
+    if(dayOn){ const dn=o.el.querySelector(".dn"); dn.textContent=(d===1?DAY1.items:S.days[d]).indexOf(id)+1; dn.style.background=`var(${DAY_COLORS[d]})`; }
+    // label collision
+    let lab=false;
+    if(z>=15.4||id===S.sel||dayOn){ const pt=map.project([p.ll[1],p.ll[0]]); const w=p.n.length*6.6+16; const box={x:pt.x+16,y:pt.y-11,w,h:22};
+      if(id===S.sel||!shownBoxes.some(b=>box.x<b.x+b.w&&box.x+box.w>b.x&&box.y<b.y+b.h&&box.y+box.h>b.y)){ shownBoxes.push(box); lab=true; } }
+    o.el.classList.toggle("showlab",lab);
+  }
+  // area bubbles (merged when they'd overlap)
+  const items=[]; for(const [a,o] of Object.entries(bubbles)){ const n=PLACES.filter(p=>p.a===a&&p.ll&&!p.far&&visible(p)).length; const pt=map.project(o.m.getLngLat()); items.push({a,o,n,pt,more:0,hidden:false}); }
+  items.sort((x,y)=>y.n-x.n);
+  for(let i=0;i<items.length;i++) for(let j=i+1;j<items.length;j++){ const A=items[i],B=items[j]; if(A.hidden||B.hidden||!B.n) continue; if(Math.hypot(A.pt.x-B.pt.x,A.pt.y-B.pt.y)<70){ A.n+=B.n; A.more+=1+B.more; B.hidden=true; } }
+  const labs=[];
+  for(const it of items){ const show=clusters&&!it.hidden&&it.n>0; it.o.el.style.display=show?"":"none"; if(!show) continue;
+    it.o.el.querySelector(".c").textContent=it.n; const t=it.o.el.querySelector(".t"); t.textContent=AREAS[it.a].n+(it.more?` +${it.more}`:"");
+    const lb={x:it.pt.x-60,y:it.pt.y+20,w:120,h:22}; const clash=labs.some(b=>lb.x<b.x+b.w&&lb.x+lb.w>b.x&&lb.y<b.y+b.h&&lb.y+lb.h>b.y); t.classList.toggle("hide",clash); if(!clash) labs.push(lb); }
+}
+function boundsFor(ps){ const b=new maplibregl.LngLatBounds(); ps.forEach(p=>b.extend([p.ll[1],p.ll[0]])); return b; }
+const mapPad=()=>innerWidth<=860?{top:50,bottom:30,left:30,right:30}:{top:70,bottom:50,left:60,right:70};
+function fitArea(k){ if(!map) return; const ps=PLACES.filter(p=>p.a===k&&p.ll&&!p.far); if(!ps.length) return; map.fitBounds(boundsFor(ps),{padding:mapPad(),maxZoom:16.2,duration:700}); }
+function fitDay(d){ if(!map||!d) return; const ps=(d===1?DAY1.items:S.days[d]).map(id=>BY[id]).filter(p=>p.ll&&!p.far); if(ps.length) map.fitBounds(boundsFor(ps),{padding:mapPad(),maxZoom:16,duration:700}); }
+function flyToPlace(p,z){ if(!map) return; map.flyTo({center:[p.ll[1],p.ll[0]],zoom:Math.max(map.getZoom(),z||15.6),duration:700,essential:true}); }
+let geo=null;
+function locateMe(){ if(geo) geo.trigger(); else toast("Location isn't available here"); }
+function initMap(){
+  if(!window.maplibregl){ document.getElementById("map").innerHTML='<p style="padding:20px;color:var(--muted)">The map couldn\'t load. Check your connection and refresh.</p>'; return; }
+  const central=PLACES.filter(p=>p.ll&&!p.far&&p.a!=="cg"&&p.a!=="dd");
+  map=new maplibregl.Map({container:"map",style:CONFIG.styles.detailed,bounds:boundsFor(central),fitBoundsOptions:{padding:30},maxZoom:18.5,minZoom:9,attributionControl:{compact:true},dragRotate:false,pitchWithRotate:false});
+  map.touchZoomRotate.disableRotation();
+  map.addControl(new maplibregl.NavigationControl({showCompass:false}),"top-right");
+  geo=new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:true},trackUserLocation:true,showAccuracyCircle:true});
+  map.addControl(geo,"top-right");
+  geo.on("geolocate",e=>{ S.here={lat:e.coords.latitude,lng:e.coords.longitude}; if(S.nearSort) renderGroups(); else { refreshVisibleRows(); } });
+  geo.on("error",()=>{ toast("Couldn't get your location"); $("#nearSort").checked=false; S.nearSort=false; });
+  map.on("style.load",addOverlays);
+  map.on("zoom",updateMarkers); map.on("moveend",updateMarkers);
+  map.on("click",()=>{ if(S.sel){ const id=S.sel; S.sel=null; refreshPlace(id); updateMarkers(); } });
+  makeMarkers(); updateMarkers();
+}
+function refreshVisibleRows(){ document.querySelectorAll(".place").forEach(el=>refreshPlace(el.id.slice(3))); }
+function renderLegend(){ $("#legend").innerHTML=Object.values(CATS).map(c=>`<span><span class="dot" style="background:var(${c.c})"></span>${esc(c.n)}</span>`).join(""); }
+
+/* ---------- boot ---------- */
+renderWho(); renderLegend(); renderAll(); initMap(); pull();
+</script>
+</body>
+</html>
